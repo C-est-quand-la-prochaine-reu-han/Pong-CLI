@@ -97,11 +97,6 @@ readc() { # arg: <variable-name>
 # W -> up
 # S -> down
 function init {
-	if [ $# != 2 ]
-	then
-		echo "./pong.sh <host> <port>"
-		exit 1
-	fi
 	echo "pos:450:450" > game.data
 	echo "mov:7:1" >> game.data
 	echo "j1:450:100" >> game.data
@@ -146,6 +141,11 @@ handle_output() {
 	done
 }
 
+if [ $# != 2 ]
+then
+	echo "./pong.sh <host> <port>"
+	exit 1
+fi
 touch game.data
 init $1 $2 | websocat ws://$1:$2 | handle_output &
 game_loop
