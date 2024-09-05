@@ -1,7 +1,14 @@
-#i!/bin/sh
+#!/bin/sh
 
 BALL_X=$(expr $(expr $(tput lines) - 5) / 2)
 BALL_Y=$(expr $(expr $(tput cols) - 5) / 2)
+
+update_ball_coords() {
+
+	COORDS=$(grep -E '^pos:' game.data)
+	BALL_X=$(expr $(cut -d':' <(echo $COORDS) -f2) '*' $LINES / 1000)
+	BALL_Y=$(expr $(cut -d':' <(echo $COORDS) -f3) '*' $COLUMNS / 1000)
+}
 
 # Builds and display the pong arena
 # Requires BALL_X and BALL_Y to exists
@@ -9,19 +16,16 @@ BALL_Y=$(expr $(expr $(tput cols) - 5) / 2)
 display() {
 	PONG_ARENA=""
 
-	LINES=$(expr $(tput lines) - 5)
-	COLS=$(expr $(tput cols) - 5)
-
 	for i in $(seq 0 $LINES)
 	do
-		for j in $(seq 0 $COLS)
+		for j in $(seq 0 $COLUMNS)
 		do
 			if [ $i = 0 ] || [ $i = $LINES ]
 			then
 				PONG_ARENA="$PONG_ARENA"'-'
 				continue
 			fi
-			if [ $j = 0 ] || [ $j = $COLS ]
+			if [ $j = 0 ] || [ $j = $COLUMNS ]
 			then
 				PONG_ARENA="$PONG_ARENA"'|'
 				continue
@@ -40,23 +44,28 @@ display() {
 	echo "$PONG_ARENA"
 }
 
-get_ball_position() {
-	exec 3< game.data
-	read ball_position <&3
-	read ball_movement <&3
-	read p1_position <&3
-	read p2_position <&3
-	BALL_X=$(cut -d':' -f 2 <(echo $ball_position))
-	BALL_Y=$(cut -d':' -f 3 <(echo $ball_position))
-	exec 3<&-
-}
+# Read informations from the game.data file
+# get_ball_position() {
+# 	exec 3< game.data
+# 	read ball_position <&3
+# 	sed -i "s/^pos.*/$ball_position/g" game.data
+# 	read ball_movement <&3
+# 	sed -i "s/^mov.*/$ball_movement/g" game.data
+# 	read p1_position <&3
+# 	sed -i "s/^j1.*/$p1_position/g" game.data
+# 	read p2_position <&3
+# 	sed -i "s/^mov.*/$p2_position/g" game.data
+# 	exec 3<&-
+# }
 
 game_loop() {
 	while [ 1 = 1 ]
 	do
-		get_ball_position
+		LINES=$(expr $(tput lines) - 5)
+		COLUMNS=$(expr $(tput cols) - 5)
+		update_ball_coords $LINES $COLS
 		display
-		sleep 0.1
+		sleep 0.0166
 	done
 }
 
@@ -94,14 +103,14 @@ readc() { # arg: <variable-name>
 
 # Build the initial game.data file
 # Handle user inputs and translate them for the websocket
-# W -> up
-# S -> down
+# w -> up
+# s -> down
 function init {
 	echo "pos:450:450" > game.data
 	echo "mov:7:1" >> game.data
 	echo "j1:450:100" >> game.data
 	echo "j2:450:900" >> game.data
-	echo "cli_player"
+	echo "$name"
 	rm -f input.log
 	while [ 1 = 1 ]
 	do
@@ -121,6 +130,7 @@ function init {
 	done
 }
 
+# Receives the server informations and edit the game.data file to guide the display process
 handle_output() {
 	while [ 1 = 1 ]
 	do
@@ -129,13 +139,15 @@ handle_output() {
 		then
 			continue
 		fi
-		echo $line
 		case $line in
 			"")
 				continue
 				;;
 			"pos"*)
 				sed -i "s/^pos.*/$line/g" game.data
+				;;
+			"winner"*)
+				exit 0
 				;;
 		esac
 	done
@@ -146,7 +158,18 @@ then
 	echo "./pong.sh <host> <port>"
 	exit 1
 fi
+
+echo "POSIX ONE-OF-A-KIND NERDY GAME (P.O.N.G.) :"
+echo -n "Please type your name: "
+read -r name
+
 touch game.data
+
 init $1 $2 | websocat ws://$1:$2 | handle_output &
+PID=$!
+
 game_loop
+
+kill $PID
+
 rm game.data
