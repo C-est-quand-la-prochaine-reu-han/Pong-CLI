@@ -3,17 +3,50 @@
 BALL_X=$(expr $(expr $(tput lines) - 5) / 2)
 BALL_Y=$(expr $(expr $(tput cols) - 5) / 2)
 
-update_ball_coords() {
+read_ball_coords() {
+	LINES=$(expr $(tput lines) - 5)
+	COLUMNS=$(expr $(tput cols) - 5)
 
 	COORDS=$(grep -E '^pos:' game.data)
-	BALL_X=$(expr $(cut -d':' <(echo $COORDS) -f2) '*' $LINES / 1000)
-	BALL_Y=$(expr $(cut -d':' <(echo $COORDS) -f3) '*' $COLUMNS / 1000)
+	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
+	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
+
+	BALL_X=$(bc -l <<< "$BALL_X * $LINES / 1000")
+	BALL_Y=$(bc -l <<< "$BALL_Y * $COLUMNS / 1000")
+}
+
+update_ball_coords() {
+	COORDS=$(grep -E '^pos:' game.data)
+	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
+	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
+
+	SPEED=$(grep -E '^mov:' game.data)
+	SPEED_X=$(cut -d':' <(echo $SPEED) -f2)
+	SPEED_Y=$(cut -d':' <(echo $SPEED) -f3)
+
+	TIME=$(grep -E '^time:' game.data | cut -d':' -f2)
+	DELTATIME=$(bc -l <<< "$(date +%s%N | tail -c 11 | head -c 4) - $TIME")
+	DELTA=$(bc -l <<< "$DELTATIME / 1000")
+
+	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X + $DELTA * $SPEED_X"))
+	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y + $DELTA * $SPEED_Y"))
+
+	echo delta : $DELTA >> logs
+	echo speed x : $SPEED_X >> logs
+	echo speed y : $SPEED_Y >> logs
+	echo ball x : $BALL_X >> logs
+	echo ball y : $BALL_Y >> logs
+	# Update time in the file
+	sed -i "s/^pos.*/pos:$BALL_X:$BALL_Y/g" game.data
+	sed -i "s/^time.*/time:$(date +%s%N | tail -c 11 | head -c 4)/g" game.data 
 }
 
 # Builds and display the pong arena
 # Requires BALL_X and BALL_Y to exists
 # Creates a string filled with the pong arena, and prints it on the screen at the end of the loop
 display() {
+	LINES=$(expr $(tput lines) - 5)
+	COLUMNS=$(expr $(tput cols) - 5)
 	PONG_ARENA=""
 
 	for i in $(seq 0 $LINES)
@@ -59,13 +92,12 @@ display() {
 # }
 
 game_loop() {
-	while [ 1 = 1 ]
+	while [ -f game.data ]
 	do
-		LINES=$(expr $(tput lines) - 5)
-		COLUMNS=$(expr $(tput cols) - 5)
-		update_ball_coords $LINES $COLS
+		read_ball_coords
 		display
-		sleep 0.0166
+		update_ball_coords
+		sleep 0.1
 	done
 }
 
@@ -110,20 +142,16 @@ function init {
 	echo "mov:7:1" >> game.data
 	echo "j1:450:100" >> game.data
 	echo "j2:450:900" >> game.data
+	echo "time:$(date +%s%N | tail -c 11 | head -c 4)" >> game.data
 	echo "$name"
-	rm -f input.log
 	while [ 1 = 1 ]
 	do
 		readc input
-		echo "$(date +%::z) : $input" >> input.log
-
 		case $input in
 			"s")
-				echo "sending down..." >> input.log
 				echo "down"
 				;;
 			"w")
-				echo "sending up..." >> input.log
 				echo "up"
 				;;
 		esac
@@ -146,8 +174,12 @@ handle_output() {
 			"pos"*)
 				sed -i "s/^pos.*/$line/g" game.data
 				;;
+			"mov"*)
+				sed -i "s/^mov.*/$line/g" game.data
+				;;
 			"winner"*)
-				exit 0
+				rm game.data
+				exit
 				;;
 		esac
 	done
@@ -159,9 +191,9 @@ then
 	exit 1
 fi
 
-echo "POSIX ONE-OF-A-KIND NERDY GAME (P.O.N.G.) :"
-echo -n "Please type your name: "
-read -r name
+# echo "POSIX ONE-OF-A-KIND NERDY GAME (P.O.N.G.) :"
+# echo -n "Please type your name: "
+# read -r name
 
 touch game.data
 
@@ -169,7 +201,4 @@ init $1 $2 | websocat ws://$1:$2 | handle_output &
 PID=$!
 
 game_loop
-
 kill $PID
-
-rm game.data
