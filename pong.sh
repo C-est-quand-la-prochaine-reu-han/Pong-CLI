@@ -11,11 +11,15 @@ read_ball_coords() {
 	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
 	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
 
-	BALL_X=$(bc -l <<< "$BALL_X * $LINES / 1000")
-	BALL_Y=$(bc -l <<< "$BALL_Y * $COLUMNS / 1000")
+	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X * $LINES / 1000"))
+	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y * $COLUMNS / 1000"))
 }
 
 update_ball_coords() {
+	until [ ! -f lock ]
+	do
+		sleep 0.1
+	done
 	COORDS=$(grep -E '^pos:' game.data)
 	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
 	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
@@ -25,20 +29,23 @@ update_ball_coords() {
 	SPEED_Y=$(cut -d':' <(echo $SPEED) -f3)
 
 	TIME=$(grep -E '^time:' game.data | cut -d':' -f2)
-	DELTATIME=$(bc -l <<< "$(date +%s%N | tail -c 11 | head -c 4) - $TIME")
-	DELTA=$(bc -l <<< "$DELTATIME / 1000")
+	DELTATIME=$(date +%s%N | tail -c 11 | head -c 6)
+	DELTA=$(bc -l <<< "($DELTATIME - $TIME) / 10000")
 
 	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X + $DELTA * $SPEED_X"))
 	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y + $DELTA * $SPEED_Y"))
 
-	echo delta : $DELTA >> logs
-	echo speed x : $SPEED_X >> logs
-	echo speed y : $SPEED_Y >> logs
-	echo ball x : $BALL_X >> logs
-	echo ball y : $BALL_Y >> logs
 	# Update time in the file
 	sed -i "s/^pos.*/pos:$BALL_X:$BALL_Y/g" game.data
-	sed -i "s/^time.*/time:$(date +%s%N | tail -c 11 | head -c 4)/g" game.data 
+	sed -i "s/^time.*/time:$(date +%s%N | tail -c 11 | head -c 6)/g" game.data 
+}
+
+read_player_coords() {
+	LINES=$(expr $(tput lines) - 5)
+	COLUMNS=$(expr $(tput cols) - 5)
+
+	J1=$(grep -E "^$name:" game.data)
+	J2=$(grep -E "^$opponent:" game.data)
 }
 
 # Builds and display the pong arena
@@ -77,20 +84,7 @@ display() {
 	echo "$PONG_ARENA"
 }
 
-# Read informations from the game.data file
-# get_ball_position() {
-# 	exec 3< game.data
-# 	read ball_position <&3
-# 	sed -i "s/^pos.*/$ball_position/g" game.data
-# 	read ball_movement <&3
-# 	sed -i "s/^mov.*/$ball_movement/g" game.data
-# 	read p1_position <&3
-# 	sed -i "s/^j1.*/$p1_position/g" game.data
-# 	read p2_position <&3
-# 	sed -i "s/^mov.*/$p2_position/g" game.data
-# 	exec 3<&-
-# }
-
+# Calculate the ball movements
 game_loop() {
 	while [ -f game.data ]
 	do
@@ -134,17 +128,19 @@ readc() { # arg: <variable-name>
 }
 
 # Build the initial game.data file
+function init_game_data {
+	echo "pos:500:500" > game.data
+	echo "mov:0:0" >> game.data
+	echo "$name:450:100" >> game.data
+	echo "time:$(date +%s%N | tail -c 11 | head -c 6)" >> game.data
+}
+
 # Handle user inputs and translate them for the websocket
 # w -> up
 # s -> down
-function init {
-	echo "pos:450:450" > game.data
-	echo "mov:7:1" >> game.data
-	echo "j1:450:100" >> game.data
-	echo "j2:450:900" >> game.data
-	echo "time:$(date +%s%N | tail -c 11 | head -c 4)" >> game.data
+function handle_movement {
 	echo "$name"
-	while [ 1 = 1 ]
+	while [ -f game.data ]
 	do
 		readc input
 		case $input in
@@ -171,15 +167,36 @@ handle_output() {
 			"")
 				continue
 				;;
-			"pos"*)
+			"pos:"*)
+				touch lock
 				sed -i "s/^pos.*/$line/g" game.data
+				rm lock
 				;;
-			"mov"*)
+			"mov:"*)
+				touch lock
 				sed -i "s/^mov.*/$line/g" game.data
+				rm lock
 				;;
-			"winner"*)
+			"opponent:"*)
+				touch lock
+				opponent=$(echo $line | cut -d':' -f2)
+				echo $opponent":450:0" >> game.data
+				rm lock
+				;;
+			"youare:"*)
+				touch lock
+				if [ $(echo $opponent | cut -d':' -f2) == 1 ]
+				then
+					sed -i "s/^$name.*/$name:450:100/g" game.data
+					sed -i "s/^$opponent.*/$opponent:450:900/g" game.data
+				else
+					sed -i "s/^$name.*/$name:450:900/g" game.data
+					sed -i "s/^$opponent.*/$opponent:450:100/g" game.data
+				fi
+				rm lock
+				;;
+			"winner:"*)
 				rm game.data
-				exit
 				;;
 		esac
 	done
@@ -194,11 +211,16 @@ fi
 # echo "POSIX ONE-OF-A-KIND NERDY GAME (P.O.N.G.) :"
 # echo -n "Please type your name: "
 # read -r name
+name=CLI_PLAYER
 
-touch game.data
-
-init $1 $2 | websocat ws://$1:$2 | handle_output &
+init_game_data
+handle_movement | (websocat ws://$1:$2 || rm game.data) | handle_output &
 PID=$!
 
-game_loop
+sleep 0.1
+if [ -f game.data ]
+then
+	game_loop
+fi
+
 kill $PID
