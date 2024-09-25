@@ -1,87 +1,80 @@
 #!/bin/sh
 
-BALL_X=$(expr $(expr $(tput lines) - 5) / 2)
-BALL_Y=$(expr $(expr $(tput cols) - 5) / 2)
-
+# Gets the ball coordinates
+# Translates them to match the current screen size
 read_ball_coords() {
 	LINES=$(expr $(tput lines) - 5)
 	COLUMNS=$(expr $(tput cols) - 5)
 
 	COORDS=$(grep -E '^pos:' game.data)
-	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
-	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
+	BALL_X=$(echo $COORDS | cut -d':' -f2)
+	BALL_Y=$(echo $COORDS | cut -d':' -f3)
 
 	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X * $LINES / 1000"))
 	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y * $COLUMNS / 1000"))
 }
 
+# Reads the ball coordinates
+# Computes the delta time between now and the last update
+# Computes the new ball coordinates
+# Updates the file containing the delta time and the coordinates
 update_ball_coords() {
-	until [ ! -f lock ]
-	do
-		sleep 0.1
-	done
 	COORDS=$(grep -E '^pos:' game.data)
-	BALL_X=$(cut -d':' <(echo $COORDS) -f2)
-	BALL_Y=$(cut -d':' <(echo $COORDS) -f3)
+	BALL_X=$(echo $COORDS | cut -d':' -f2)
+	BALL_Y=$(echo $COORDS | cut -d':' -f3)
 
 	SPEED=$(grep -E '^mov:' game.data)
-	SPEED_X=$(cut -d':' <(echo $SPEED) -f2)
-	SPEED_Y=$(cut -d':' <(echo $SPEED) -f3)
+	SPEED_X=$(echo $SPEED | cut -d':' -f2)
+	SPEED_Y=$(echo $SPEED | cut -d':' -f3)
 
 	TIME=$(grep -E '^time:' game.data | cut -d':' -f2)
-	DELTATIME=$(date +%s%N | tail -c 11 | head -c 6)
-	DELTA=$(bc -l <<< "($DELTATIME - $TIME) / 10000")
+	DELTATIME=$(date +%s%N)
 
-	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X + $DELTA * $SPEED_X"))
-	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y + $DELTA * $SPEED_Y"))
+	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X + (($DELTATIME - $TIME) * $SPEED_X / 1000000000)"))
+	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y + (($DELTATIME - $TIME) * $SPEED_Y / 1000000000)"))
 
 	# Update time in the file
 	sed -i "s/^pos.*/pos:$BALL_X:$BALL_Y/g" game.data
-	sed -i "s/^time.*/time:$(date +%s%N | tail -c 11 | head -c 6)/g" game.data 
+	sed -i "s/^time.*/time:$(date +%s%N)/g" game.data 
 }
 
+# Reads the player coordinates
 read_player_coords() {
 	LINES=$(expr $(tput lines) - 5)
 	COLUMNS=$(expr $(tput cols) - 5)
 
-	J1=$(grep -E "^$name:" game.data)
-	J2=$(grep -E "^$opponent:" game.data)
+	J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
+	J2=$(grep -E "^$opponent:" game.data | cut -d':' -f2)
+
+	# TODO Convert these coords to local coords
+	# TODO Display the paddels
 }
 
 # Builds and display the pong arena
 # Requires BALL_X and BALL_Y to exists
-# Creates a string filled with the pong arena, and prints it on the screen at the end of the loop
+# Creates a file filled with the pong arena, and prints it on the screen at the end of the loop
 display() {
-	LINES=$(expr $(tput lines) - 5)
 	COLUMNS=$(expr $(tput cols) - 5)
-	PONG_ARENA=""
+	LINES=$(expr $(tput lines) - 5)
 
-	for i in $(seq 0 $LINES)
+	rm arena
+	exec 3<>arena
+	printf -- "-%.0s" $(seq 6 $COLUMNS) >&3
+	for j in $(seq 7 $LINES)
 	do
-		for j in $(seq 0 $COLUMNS)
-		do
-			if [ $i = 0 ] || [ $i = $LINES ]
-			then
-				PONG_ARENA="$PONG_ARENA"'-'
-				continue
-			fi
-			if [ $j = 0 ] || [ $j = $COLUMNS ]
-			then
-				PONG_ARENA="$PONG_ARENA"'|'
-				continue
-			fi
-			if [ "$i" = "$BALL_X" ] && [ "$j" = "$BALL_Y" ]
-			then
-				PONG_ARENA="$PONG_ARENA"'o'
-				continue
-			fi
-			PONG_ARENA="$PONG_ARENA"' '
-		done
-		PONG_ARENA="$PONG_ARENA"$'\n'
+		printf '\n|' >&3
+		printf ' %.0s' $(seq 8 $COLUMNS) >&3
+		printf '|' >&3
 	done
+	printf "\n" >&3
+	printf -- "-%.0s" $(seq 6 $COLUMNS) >&3
+	printf "\n" >&3
+	exec 3>&-
+
+	dd if=<(echo "o") of=./arena bs=1 seek=$(bc -l <<< "($COLUMNS - 4) * $BALL_X + $BALL_Y") count=1 conv=notrunc &> /dev/null
 
 	clear
-	echo "$PONG_ARENA"
+	cat arena
 }
 
 # Calculate the ball movements
@@ -89,9 +82,9 @@ game_loop() {
 	while [ -f game.data ]
 	do
 		read_ball_coords
+		read_player_coords
 		display
 		update_ball_coords
-		sleep 0.1
 	done
 }
 
@@ -132,7 +125,7 @@ function init_game_data {
 	echo "pos:500:500" > game.data
 	echo "mov:0:0" >> game.data
 	echo "$name:450:100" >> game.data
-	echo "time:$(date +%s%N | tail -c 11 | head -c 6)" >> game.data
+	echo "time:$(date +%s%N)" >> game.data
 }
 
 # Handle user inputs and translate them for the websocket
@@ -156,7 +149,7 @@ function handle_movement {
 
 # Receives the server informations and edit the game.data file to guide the display process
 handle_output() {
-	while [ 1 = 1 ]
+	while [ -f game.data ]
 	do
 		read -r line
 		if [ -z "$line" ]
@@ -168,35 +161,35 @@ handle_output() {
 				continue
 				;;
 			"pos:"*)
-				touch lock
 				sed -i "s/^pos.*/$line/g" game.data
-				rm lock
 				;;
 			"mov:"*)
-				touch lock
 				sed -i "s/^mov.*/$line/g" game.data
-				rm lock
 				;;
 			"opponent:"*)
-				touch lock
 				opponent=$(echo $line | cut -d':' -f2)
 				echo $opponent":450:0" >> game.data
-				rm lock
 				;;
 			"youare:"*)
-				touch lock
 				if [ $(echo $opponent | cut -d':' -f2) == 1 ]
 				then
-					sed -i "s/^$name.*/$name:450:100/g" game.data
-					sed -i "s/^$opponent.*/$opponent:450:900/g" game.data
+					sed -i "s/^$name:.*/$name:450:100/g" game.data
+					sed -i "s/^$opponent:.*/$opponent:450:900/g" game.data
 				else
-					sed -i "s/^$name.*/$name:450:900/g" game.data
-					sed -i "s/^$opponent.*/$opponent:450:100/g" game.data
+					sed -i "s/^$name:.*/$name:450:900/g" game.data
+					sed -i "s/^$opponent:.*/$opponent:450:100/g" game.data
 				fi
-				rm lock
+				;;
+			"$opponent:"*)
+					sed -i "s/^$opponent:.*/$line/g" game.data
+				;;
+			"$name:"*)
+					sed -i "s/^$name:.*/$line/g" game.data
 				;;
 			"winner:"*)
 				rm game.data
+				sleep 0.2
+				echo "Winner is : " $(echo $line | cut -d':' -f2)
 				;;
 		esac
 	done
@@ -214,7 +207,7 @@ fi
 name=CLI_PLAYER
 
 init_game_data
-handle_movement | (websocat ws://$1:$2 || rm game.data) | handle_output &
+handle_movement | (websocat ws://$1:$2 || rm game.data) | handle_output &> /dev/null &
 PID=$!
 
 sleep 0.1
@@ -223,4 +216,4 @@ then
 	game_loop
 fi
 
-kill $PID
+rm arena
