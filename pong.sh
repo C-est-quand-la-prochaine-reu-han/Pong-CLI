@@ -43,8 +43,17 @@ read_player_coords() {
 	LINES=$(expr $(tput lines) - 5)
 	COLUMNS=$(expr $(tput cols) - 5)
 
+	echo name : $name
+	echo opponent : $opponent
+
 	J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
 	J2=$(grep -E "^$opponent:" game.data | cut -d':' -f2)
+
+	J1=$(bc -l <<< "$J1 * $LINES / 1000")
+	J2=$(bc -l <<< "$J2 * $LINES / 1000")
+
+	echo $J1
+	echo $J2
 
 	# TODO Convert these coords to local coords
 	# TODO Display the paddels
@@ -168,20 +177,21 @@ handle_output() {
 				;;
 			"opponent:"*)
 				opponent=$(echo $line | cut -d':' -f2)
-				echo $opponent":450:0" >> game.data
+				echo "opponent:450:0" >> game.data
 				;;
 			"youare:"*)
 				if [ $(echo $opponent | cut -d':' -f2) == 1 ]
 				then
 					sed -i "s/^$name:.*/$name:450:100/g" game.data
-					sed -i "s/^$opponent:.*/$opponent:450:900/g" game.data
+					sed -i "s/opponent:.*/opponent:450:900/g" game.data
 				else
 					sed -i "s/^$name:.*/$name:450:900/g" game.data
-					sed -i "s/^$opponent:.*/$opponent:450:100/g" game.data
+					sed -i "s/opponent:.*/opponent:450:100/g" game.data
 				fi
 				;;
 			"$opponent:"*)
-					sed -i "s/^$opponent:.*/$line/g" game.data
+					line=sed "s/$opponent/opponent/g" line
+					sed -i "s/^opponent:.*/$line/g" game.data
 				;;
 			"$name:"*)
 					sed -i "s/^$name:.*/$line/g" game.data
