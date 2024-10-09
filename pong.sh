@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash --posix
 
 # Gets the ball coordinates
 # Translates them to match the current screen size
@@ -7,10 +7,10 @@ read_ball_coords() {
 	COLUMNS=$(expr $(tput cols) - 5)
 
 	COORDS=$(grep -E '^pos:' game.data)
-	BALL_X=$(echo $COORDS | cut -d':' -f2)
-	BALL_Y=$(echo $COORDS | cut -d':' -f3)
+	BALL_X=$(printf "$COORDS\n" | cut -d':' -f2)
+	BALL_Y=$(printf "$COORDS\n" | cut -d':' -f3)
 
-	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X * $LINES / 1000"))
+	BALL_X=$(printf "%.0f" $(bc -l <<< "$BALL_X * $LINES / 1000"));
 	BALL_Y=$(printf "%.0f" $(bc -l <<< "$BALL_Y * $COLUMNS / 1000"))
 }
 
@@ -43,20 +43,20 @@ read_player_coords() {
 	LINES=$(expr $(tput lines) - 5)
 	COLUMNS=$(expr $(tput cols) - 5)
 
-	echo name : $name
-	echo opponent : $opponent
+	# echo name : $name
+	# echo opponent : $opponent
 
 	J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
 	J2=$(grep -E "^$opponent:" game.data | cut -d':' -f2)
 
-	J1=$(bc -l <<< "$J1 * $LINES / 1000")
-	J2=$(bc -l <<< "$J2 * $LINES / 1000")
-
-	echo $J1
-	echo $J2
-
-	# TODO Convert these coords to local coords
-	# TODO Display the paddels
+	if [ ! -z "$J1" ]
+	then
+		J1=$(printf "%.0f" $(bc -l <<< "$J1 * $LINES / 1000"))
+	fi
+	if [ ! -z "$J2" ]
+	then
+		J2=$(printf "%.0f" $(bc -l <<< "$J2 * $LINES / 1000"))
+	fi
 }
 
 # Builds and display the pong arena
@@ -80,6 +80,22 @@ display() {
 	printf "\n" >&3
 	exec 3>&-
 
+	if [ ! -z "$J1" ]
+	then
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 3) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 4) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 5) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 6) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 7) + 5")) count=1 conv=notrunc &> /dev/null
+	fi
+	if [ ! -z "$J2" ]
+	then
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 3) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 4) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 5) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 6) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 7) + 5")) count=1 conv=notrunc &> /dev/null
+	fi
 	dd if=<(echo "o") of=./arena bs=1 seek=$(bc -l <<< "($COLUMNS - 4) * $BALL_X + $BALL_Y") count=1 conv=notrunc &> /dev/null
 
 	clear
@@ -205,9 +221,9 @@ handle_output() {
 	done
 }
 
-if [ $# != 2 ]
+if [ $# != 1 ]
 then
-	echo "./pong.sh <host> <port>"
+	echo "./pong.sh <url>"
 	exit 1
 fi
 
@@ -217,7 +233,7 @@ fi
 name=CLI_PLAYER
 
 init_game_data
-handle_movement | (websocat ws://$1:$2 || rm game.data) | handle_output &> /dev/null &
+handle_movement | (websocat -k $1 || rm game.data) | handle_output &> /dev/null &
 PID=$!
 
 sleep 0.1
