@@ -82,19 +82,19 @@ display() {
 
 	if [ ! -z "$J1" ]
 	then
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 1) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 2) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 3) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 4) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 5) + 5")) count=1 conv=notrunc &> /dev/null
-		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 6) + 5")) count=1 conv=notrunc &> /dev/null
-		dd if=<(echo "1") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J1 + 7) + 5")) count=1 conv=notrunc &> /dev/null
 	fi
 	if [ ! -z "$J2" ]
 	then
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 1) + 5")) count=1 conv=notrunc &> /dev/null
+		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 2) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 3) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 4) + 5")) count=1 conv=notrunc &> /dev/null
 		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 5) + 5")) count=1 conv=notrunc &> /dev/null
-		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 6) + 5")) count=1 conv=notrunc &> /dev/null
-		dd if=<(echo "2") of=./arena bs=1 seek=$(printf "%.0f" $(bc -l <<< "($COLUMNS - 4) * ($J2 + 7) + 5")) count=1 conv=notrunc &> /dev/null
 	fi
 	dd if=<(echo "o") of=./arena bs=1 seek=$(bc -l <<< "($COLUMNS - 4) * $BALL_X + $BALL_Y") count=1 conv=notrunc &> /dev/null
 
@@ -163,9 +163,15 @@ function handle_movement {
 		readc input
 		case $input in
 			"s")
+				J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
+				J1=$(expr $J1 + 80)
+				sed -i "s/^$name.*$/$name:$J1/g" game.data
 				echo "down"
 				;;
 			"w")
+				J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
+				J1=$(expr $J1 - 80)
+				sed -i "s/^$name.*$/$name:$J1/g" game.data
 				echo "up"
 				;;
 		esac
