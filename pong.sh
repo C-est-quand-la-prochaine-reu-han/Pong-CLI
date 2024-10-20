@@ -158,19 +158,21 @@ function init_game_data {
 # s -> down
 function handle_movement {
 	echo "$name"
+	HEIGHT=$(tput lines)
+	HEIGHT=$(expr $HEIGHT / 10)
 	while [ -f game.data ]
 	do
 		readc input
 		case $input in
 			"s")
 				J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
-				J1=$(expr $J1 + 80)
+				J1=$(expr $J1 + $HEIGHT)
 				sed -i "s/^$name.*$/$name:$J1/g" game.data
 				echo "down"
 				;;
 			"w")
 				J1=$(grep -E "^$name:" game.data | cut -d':' -f2)
-				J1=$(expr $J1 - 80)
+				J1=$(expr $J1 - $HEIGHT)
 				sed -i "s/^$name.*$/$name:$J1/g" game.data
 				echo "up"
 				;;
@@ -222,6 +224,9 @@ handle_output() {
 				rm game.data
 				sleep 0.2
 				echo "Winner is : " $(echo $line | cut -d':' -f2)
+				;;
+			"who are you ? get out")
+				echo "Unrecognized token :c"
 				;;
 		esac
 	done
